@@ -16,10 +16,9 @@ INSTALLATION
 4. Crée un utilisateur de test dans Authentication > Users.
 5. Dans SQL Editor, rends ton premier administrateur, par exemple :
    update public.profiles set role='admin' where email='admin@entreprise.fr';
-6. Ouvre supabase-config.js et remplace :
-   supabaseUrl: 'https://TON-PROJET.supabase.co'
-   supabasePublishableKey: 'TA-CLE-PUBLISHABLE'
-   companyEmailDomain: 'entreprise.fr'
+6. La configuration Supabase est déjà renseignée dans supabase-config.js pour le projet Kovoit.
+   Le domaine email est volontairement laissé vide pour permettre le premier test.
+   Pour limiter l'accès aux salariés, remplace companyEmailDomain par le vrai domaine email de l'entreprise.
 7. Héberge le dossier sur un site HTTPS (ou teste avec un serveur local).
 
 IMPORTANT
