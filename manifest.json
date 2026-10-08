@@ -1,0 +1,9 @@
+{
+  "name": "Kovoit",
+  "short_name": "Kovoit",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f4f7f6",
+  "theme_color": "#0aa56b",
+  "description": "Covoiturage professionnel de l'entreprise"
+}
