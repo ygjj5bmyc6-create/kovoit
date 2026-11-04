@@ -36,7 +36,7 @@
 
 <div id="app" class="app">
 <aside class="side"><div class="brand">🚗 Kovoit</div><div class="nav">
-<button data-page="home">⌂ Accueil</button><button data-page="search">⌕ Rechercher</button><button data-page="create">＋ Proposer un trajet</button><button data-page="trips">▣ Mes trajets</button><button data-page="messages">💬 Messages</button><button data-page="profile">◯ Mon profil</button><button id="adminNav" data-page="admin">⚙ Administration</button>
+<button data-page="home">⌂ Accueil</button><button data-page="search">⌕ Rechercher</button><button data-page="create">＋ Proposer un trajet</button><button data-page="trips">▣ Mes trajets</button><button data-page="messages">💬 Messages</button><button data-page="profile">◯ Mon profil</button><button id="adminNav" data-page="admin" style="display:none">⚙ Administration</button>
 <button onclick="logout()" style="margin-top:25px">↪ Déconnexion</button></div></aside>
 <main class="main">
 
@@ -62,9 +62,13 @@
 
 <section id="profile" class="page"><div class="top"><div><h2>Mon profil</h2><div class="muted">Informations professionnelles</div></div></div><div class="card form"><div class="field"><label>Nom</label><input id="pn"></div><div class="field"><label>Email</label><input id="pe" readonly></div><div class="field"><label>Département</label><input id="pd" value="Salarié"></div><button class="btn" onclick="saveProfile()">Enregistrer</button></div></section>
 
-<section id="admin" class="page"><div class="top"><div><h2>Administration</h2><div class="muted">Réservé à l’administrateur de l’entreprise.</div></div></div><div class="cards"><div class="card metric"><div class="muted">Salariés</div><b id="am">128</b></div><div class="card metric"><div class="muted">Trajets</div><b id="at">0</b></div><div class="card metric"><div class="muted">Réservations</div><b id="ab">0</b></div></div><div class="card" style="margin-top:15px"><h3>Utilisateurs</h3><table class="table"><thead><tr><th>Nom</th><th>Email</th><th>Statut</th></tr></thead><tbody id="adminUsers"></tbody></table></div></section>
+<section id="admin" class="page"><div class="top"><div><h2>Administration</h2><div class="muted">Gestion de l’espace covoiturage de l’entreprise.</div></div><button class="btn alt" onclick="loadAdmin()">↻ Actualiser</button></div>
+<div class="cards"><div class="card metric"><div class="muted">Comptes actifs</div><b id="am">—</b></div><div class="card metric"><div class="muted">Trajets enregistrés</div><b id="at">—</b></div><div class="card metric"><div class="muted">Réservations confirmées</div><b id="ab">—</b></div></div>
+<div class="card" style="margin-top:15px;overflow-x:auto"><h3>Utilisateurs</h3><p class="muted">Vous pouvez désactiver ou réactiver un compte. Votre propre compte ne peut pas être désactivé ici.</p><table class="table"><thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>État</th><th>Action</th></tr></thead><tbody id="adminUsers"><tr><td colspan="5">Chargement…</td></tr></tbody></table></div>
+<div class="card" style="margin-top:15px;overflow-x:auto"><h3>Tous les trajets</h3><p class="muted">Vous pouvez annuler un trajet publié dans l’entreprise.</p><table class="table"><thead><tr><th>Date</th><th>Trajet</th><th>Conducteur</th><th>État</th><th>Action</th></tr></thead><tbody id="adminTrips"><tr><td colspan="5">Chargement…</td></tr></tbody></table></div>
+<div class="hint">Les actions d’administration sont contrôlées par les règles de sécurité Supabase. La suppression définitive des comptes Auth n’est pas proposée depuis cette interface.</div></section>
 </main>
-<nav class="bottom"><button data-page="home">⌂<br>Accueil</button><button data-page="search">⌕<br>Recherche</button><button data-page="create">＋<br>Proposer</button><button data-page="trips">▣<br>Trajets</button><button data-page="profile">◯<br>Profil</button><button onclick="logout()">↪<br>Sortir</button></nav>
+<nav class="bottom"><button data-page="home">⌂<br>Accueil</button><button data-page="search">⌕<br>Recherche</button><button data-page="create">＋<br>Proposer</button><button data-page="trips">▣<br>Trajets</button><button data-page="profile">◯<br>Profil</button><button id="adminBottom" data-page="admin" style="display:none">⚙<br>Admin</button><button onclick="logout()">↪<br>Sortir</button></nav>
 </div><div id="toast" class="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -126,7 +130,7 @@ async function start(authUser){
   if(error){toast('Profil introuvable. Vérifiez le déclencheur Supabase.');await sb.auth.signOut();return}
   if(!data.active){toast('Votre compte est désactivé.');await sb.auth.signOut();return}
   profile=data;
-  $('login').style.display='none';$('app').style.display='flex';$('adminNav').style.display=profile.role==='admin'?'block':'none';$('hello').textContent=profile.full_name||user.email.split('@')[0];
+  $('login').style.display='none';$('app').style.display='flex';const isAdmin=profile.role==='admin';$('adminNav').style.display=isAdmin?'block':'none';$('adminBottom').style.display=isAdmin?'block':'none';$('hello').textContent=profile.full_name||user.email.split('@')[0];
   loadProfile();await refresh();go('home');
 }
 async function logout(){if(sb)await sb.auth.signOut();user=null;profile=null;location.reload()}
@@ -183,12 +187,39 @@ async function loadMessages(){
 async function sendMsg(){const body=$('mi').value.trim(),to=$('messageTo').value.trim().toLowerCase();if(!body||!to){toast('Indiquez le destinataire et le message.');return}const {data:p,error:pe}=await sb.from('profiles').select('id').eq('email',to).eq('active',true).single();if(pe||!p){toast('Destinataire introuvable.');return}const {error}=await sb.from('messages').insert({sender_id:user.id,receiver_id:p.id,body});if(error)toast(error.message);else{$('mi').value='';toast('Message envoyé ✓');await loadMessages();await loadHome()}}
 function loadProfile(){$('pn').value=profile.full_name||'';$('pe').value=profile.email||user.email;$('pd').value=profile.department||''}
 async function saveProfile(){const full_name=$('pn').value.trim(),department=$('pd').value.trim();const {data,error}=await sb.from('profiles').update({full_name,department,updated_at:new Date().toISOString()}).eq('id',user.id).select().single();if(error)toast(error.message);else{profile=data;$('hello').textContent=full_name||user.email.split('@')[0];toast('Profil enregistré ✓')}}
-async function loadAdmin(){if(profile?.role!=='admin')return;const [{count:mc},{count:tc},{count:bc},{data:users}]=await Promise.all([
-  sb.from('profiles').select('*',{count:'exact',head:true}).eq('active',true),
-  sb.from('trips').select('*',{count:'exact',head:true}),
-  sb.from('bookings').select('*',{count:'exact',head:true}).eq('status','confirmed'),
-  sb.from('profiles').select('full_name,email,active,role').order('full_name').limit(200)
-]);$('am').textContent=mc??0;$('at').textContent=tc??0;$('ab').textContent=bc??0;const tbody=$('adminUsers');tbody.innerHTML=(users||[]).map(u=>`<tr><td>${esc(u.full_name)}</td><td>${esc(u.email)}</td><td>${u.active?'Actif':'Désactivé'}${u.role==='admin'?' · Admin':''}</td></tr>`).join('')||'<tr><td colspan="3">Aucun utilisateur.</td></tr>'}
+async function loadAdmin(){
+  if(profile?.role!=='admin')return;
+  const [{count:mc,error:me},{count:tc,error:te},{count:bc,error:be},{data:users,error:ue},{data:trips,error:tre}]=await Promise.all([
+    sb.from('profiles').select('id',{count:'exact',head:true}).eq('active',true),
+    sb.from('trips').select('id',{count:'exact',head:true}),
+    sb.from('bookings').select('id',{count:'exact',head:true}).eq('status','confirmed'),
+    sb.from('profiles').select('id,full_name,email,active,role').order('full_name').limit(200),
+    sb.from('trips').select('id,driver_id,from_location,to_location,trip_date,trip_time,status,profiles!trips_driver_id_fkey(full_name)').order('trip_date',{ascending:false}).limit(200)
+  ]);
+  $('am').textContent=mc??'—';$('at').textContent=tc??'—';$('ab').textContent=bc??'—';
+  const tbody=$('adminUsers');
+  if(ue){tbody.innerHTML='<tr><td colspan="5">Impossible de charger les utilisateurs : '+esc(ue.message)+'</td></tr>';}else{
+    tbody.innerHTML=(users||[]).map(u=>`<tr><td>${esc(u.full_name||'—')}</td><td>${esc(u.email||'')}</td><td>${u.role==='admin'?'Administrateur':'Salarié'}</td><td>${u.active?'Actif':'Désactivé'}</td><td>${u.id===user.id?'<span class="muted">Vous</span>':`<button class="btn ${u.active?'red':'alt'}" onclick="toggleUser('${u.id}',${!u.active})">${u.active?'Désactiver':'Réactiver'}</button>`}</td></tr>`).join('')||'<tr><td colspan="5">Aucun utilisateur.</td></tr>';
+  }
+  const tt=$('adminTrips');
+  if(tre){tt.innerHTML='<tr><td colspan="5">Impossible de charger les trajets : '+esc(tre.message)+'</td></tr>';}else{
+    tt.innerHTML=(trips||[]).map(t=>`<tr><td>${esc(fmtDate(t.trip_date))} · ${esc(String(t.trip_time).slice(0,5))}</td><td>${esc(t.from_location)} → ${esc(t.to_location)}</td><td>${esc(t.profiles?.full_name||'Salarié')}</td><td>${t.status==='active'?'Actif':t.status==='cancelled'?'Annulé':'Terminé'}</td><td>${t.status==='active'?`<button class="btn red" onclick="adminCancelTrip(${t.id})">Annuler</button>`:'—'}</td></tr>`).join('')||'<tr><td colspan="5">Aucun trajet.</td></tr>';
+  }
+  if(me||te||be)toast('Certaines statistiques n’ont pas pu être chargées. Vérifiez les autorisations Supabase.');
+}
+async function toggleUser(id,active){
+  if(profile?.role!=='admin'){toast('Accès réservé à l’administrateur.');return;}
+  if(id===user.id){toast('Vous ne pouvez pas désactiver votre propre compte.');return;}
+  const action=active?'réactiver':'désactiver';if(!confirm('Voulez-vous vraiment '+action+' ce compte ?'))return;
+  const {error}=await sb.from('profiles').update({active,updated_at:new Date().toISOString()}).eq('id',id);
+  if(error){toast('Modification impossible : '+error.message);return;}toast('Compte mis à jour ✓');await loadAdmin();
+}
+async function adminCancelTrip(id){
+  if(profile?.role!=='admin')return;
+  if(!confirm('Annuler définitivement ce trajet (il restera visible comme annulé) ?'))return;
+  const {error}=await sb.from('trips').update({status:'cancelled',updated_at:new Date().toISOString()}).eq('id',id);
+  if(error){toast('Annulation impossible : '+error.message);return;}toast('Trajet annulé ✓');await loadAdmin();await refresh();
+}
 $('pass').addEventListener('keydown',e=>{if(e.key==='Enter')login()});$('email').addEventListener('keydown',e=>{if(e.key==='Enter')login()});
 if(!configured){$('email').value='';$('pass').value='';$('login').insertAdjacentHTML('beforeend','<div class="hint" style="color:#b34a45">Configuration Supabase manquante : renseignez <b>supabase-config.js</b> avant de vous connecter.</div>')}
 else{
