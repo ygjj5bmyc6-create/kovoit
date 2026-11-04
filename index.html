@@ -89,7 +89,8 @@ async function signup(){
   if(!email||!password){toast('Saisissez votre email et un mot de passe.');return}
   if(password.length<6){toast('Le mot de passe doit contenir au moins 6 caractères.');return}
   if(CFG.companyEmailDomain && !email.endsWith('@'+CFG.companyEmailDomain.toLowerCase())){toast('Utilisez votre adresse email professionnelle.');return}
-  const {data,error}=await sb.auth.signUp({email,password});
+  const redirectTo=window.location.origin+window.location.pathname;
+  const {data,error}=await sb.auth.signUp({email,password,options:{emailRedirectTo:redirectTo}});
   if(error){toast('Inscription impossible : '+error.message);return}
   if(data.session && data.user){
     toast('Compte créé ✓');
