@@ -1,3 +1,4 @@
+
 -- KOVOIT V2 — schéma Supabase/PostgreSQL
 create extension if not exists pgcrypto;
 
@@ -129,35 +130,6 @@ $$;
 revoke all on function public.book_trip(bigint) from public;
 grant execute on function public.book_trip(bigint) to authenticated;
 
--- Nombre de réservations confirmées par trajet.
--- Cette fonction permet aux salariés de connaître les places restantes
--- sans leur donner accès aux informations personnelles des autres passagers.
-create or replace function public.get_trip_booking_counts(p_trip_ids bigint[])
-returns table (trip_id bigint, confirmed_count bigint)
-language sql
-stable
-security definer
-set search_path = ''
-as $$
-  select
-    t.id as trip_id,
-    count(b.id)::bigint as confirmed_count
-  from public.trips as t
-  left join public.bookings as b
-    on b.trip_id = t.id
-   and b.status = 'confirmed'
-  where
-    (select auth.uid()) is not null
-    and t.id = any(coalesce(p_trip_ids, '{}'::bigint[]))
-    and t.status = 'active'
-  group by t.id;
-$$;
-
-revoke all on function public.get_trip_booking_counts(bigint[]) from public;
-revoke all on function public.get_trip_booking_counts(bigint[]) from anon;
-grant execute on function 
-public.get_trip_booking_counts(bigint[]) to authenticated;
-
 alter table public.profiles enable row level security;
 alter table public.trips enable row level security;
 alter table public.bookings enable row level security;
@@ -168,51 +140,52 @@ alter table public.reports enable row level security;
 drop policy if exists profiles_select on public.profiles;
 create policy profiles_select on public.profiles for select to authenticated using (active=true or id=(select auth.uid()) or (select public.is_admin()));
 drop policy if exists profiles_update_self on public.profiles;
-create policy profiles_update_self on public.profiles for update to authenticated using (id=(select auth.uid()) or (select public.is_admin())) with check (id=(select auth.uid()) or (select public.is_admin()));
+create policy profiles_update_self on 
+public.profiles for update to authenticated using (id=(select auth.uid()) or (select public.is_admin())) with check (id=(select auth.uid()) or (select public.is_admin()));
 
 drop policy if exists trips_select on public.trips;
-create policy trips_select on public.trips for 
-select to authenticated using (status='active' or driver_id=(select auth.uid()) or (select public.is_admin()));
+create policy trips_select on public.trips for select to authenticated using (status='active' or driver_id=(select auth.uid()) or (select public.is_admin()));
 drop policy if exists trips_insert on public.trips;
 create policy trips_insert on public.trips for insert to authenticated with check (driver_id=(select auth.uid()));
 drop policy if exists trips_update on public.trips;
 create policy trips_update on public.trips for update to authenticated using (driver_id=(select auth.uid()) or (select public.is_admin())) with check (driver_id=(select auth.uid()) or (select public.is_admin()));
 drop policy if exists trips_delete on public.trips;
-create policy trips_delete on public.trips for 
-delete to authenticated using (driver_id=(select auth.uid()) or (select public.is_admin()));
+create policy trips_delete on public.trips for delete to authenticated using (driver_id=(select auth.uid()) or (select public.is_admin()));
 
 drop policy if exists bookings_select on public.bookings;
 create policy bookings_select on public.bookings for select to authenticated using (
- passenger_id=(select auth.uid()) or exists(select 1 from public.trips t where t.id=trip_id and t.driver_id=(select auth.uid())) or (select public.is_admin())
+ passenger_id=(select auth.uid()) or exists(select 
+1 from public.trips t where t.id=trip_id and t.driver_id=(select auth.uid())) or (select public.is_admin())
 );
 drop policy if exists bookings_delete on public.bookings;
-create policy bookings_delete on 
-public.bookings for delete to authenticated using (
+create policy bookings_delete on public.bookings for delete to authenticated using (
  passenger_id=(select auth.uid()) or exists(select 1 from public.trips t where t.id=trip_id and t.driver_id=(select auth.uid())) or (select public.is_admin())
 );
 
-drop policy if exists messages_select on public.messages;
-create policy messages_select on public.messages for select to authenticated using (sender_id=(select auth.uid()) or receiver_id=(select auth.uid()) or (select public.is_admin()));
-drop policy if exists messages_insert on 
+drop policy if exists messages_select on 
 public.messages;
+create policy messages_select on public.messages for select to authenticated using (sender_id=(select auth.uid()) or receiver_id=(select auth.uid()) or (select public.is_admin()));
+drop policy if exists messages_insert on public.messages;
 create policy messages_insert on public.messages for insert to authenticated with check (sender_id=(select auth.uid()));
 
 drop policy if exists notifications_select on public.notifications;
-create policy notifications_select on public.notifications for select to authenticated using (user_id=(select auth.uid()));
+create policy notifications_select on public.notifications for select to authenticated 
+using (user_id=(select auth.uid()));
 drop policy if exists notifications_update on public.notifications;
 create policy notifications_update on public.notifications for update to authenticated using (user_id=(select auth.uid())) with check (user_id=(select auth.uid()));
 
 drop policy if exists reports_insert on public.reports;
 create policy reports_insert on public.reports for insert to authenticated with check (reporter_id=(select auth.uid()));
 drop policy if exists reports_select on public.reports;
-create policy reports_select on public.reports for select to authenticated using (reporter_id=(select auth.uid()) or (select public.is_admin()));
+create policy reports_select on public.reports 
+for select to authenticated using (reporter_id=(select auth.uid()) or (select public.is_admin()));
 drop policy if exists reports_update on public.reports;
-create policy reports_update on public.reports for update to authenticated using ((select 
-public.is_admin())) with check ((select public.is_admin()));
+create policy reports_update on public.reports for update to authenticated using ((select public.is_admin())) with check ((select public.is_admin()));
 
 revoke all on public.profiles, public.trips, public.bookings, public.messages, public.notifications, public.reports from anon;
 grant select,update on public.profiles to authenticated;
-grant select,insert,update,delete on public.trips to authenticated;
+grant select,insert,update,delete on public.trips 
+to authenticated;
 grant select,delete on public.bookings to authenticated;
 grant select,insert on public.messages to authenticated;
 grant select,update on public.notifications to authenticated;
