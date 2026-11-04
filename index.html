@@ -89,8 +89,7 @@ async function signup(){
   if(!email||!password){toast('Saisissez votre email et un mot de passe.');return}
   if(password.length<6){toast('Le mot de passe doit contenir au moins 6 caractères.');return}
   if(CFG.companyEmailDomain && !email.endsWith('@'+CFG.companyEmailDomain.toLowerCase())){toast('Utilisez votre adresse email professionnelle.');return}
-  const redirectTo=window.location.origin+window.location.pathname;
-  const {data,error}=await sb.auth.signUp({email,password,options:{emailRedirectTo:redirectTo}});
+  const {data,error}=await sb.auth.signUp({email,password});
   if(error){toast('Inscription impossible : '+error.message);return}
   if(data.session && data.user){
     toast('Compte créé ✓');
@@ -156,7 +155,7 @@ async function renderSearch(){
   if(!data?.length){r.innerHTML='<div class="card muted">Aucun trajet trouvé.</div>';return}
   const ids=data.map(x=>x.id);const {data:bookings}=await sb.from('bookings').select('trip_id,passenger_id').in('trip_id',ids).eq('status','confirmed');
   r.innerHTML='';data.forEach(x=>{const count=(bookings||[]).filter(b=>b.trip_id===x.id).length;const avail=Math.max(0,x.seats_total-count);const mine=(bookings||[]).some(b=>b.trip_id===x.id&&b.passenger_id===user.id);const owner=x.driver_id===user.id;let action=owner?'<span class="badge">Votre trajet</span>':mine?'<span class="badge">Réservé ✓</span>':avail>0?`<button class="btn" onclick="book(${x.id})">Réserver</button>`:'<span class="badge">Complet</span>';
-    r.innerHTML+=`<div class="card"><div class="trip"><div><h3>${esc(x.profiles?.full_name||'Salarié')}</h3><div class="muted">${esc(fmtDate(x.trip_date))} · ${esc(String(x.trip_time).slice(0,5))} · ${esc(x.from_location)} → ${esc(x.to_location)}</div><div class="tags"><span>${avail} place(s) restante(s) / ${x.seats_total}</span><span>${esc(x.recurrence||'Une fois')}</span></div></div>${action}</div>${x.comment?`<div class="hint" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--b)"><b>Commentaire du conducteur :</b> ${esc(x.comment)}</div>`:''}</div>`});
+    r.innerHTML+=`<div class="card trip"><div><h3>${esc(x.profiles?.full_name||'Salarié')}</h3><div class="muted">${esc(fmtDate(x.trip_date))} · ${esc(String(x.trip_time).slice(0,5))} · ${esc(x.from_location)} → ${esc(x.to_location)}</div><div class="tags"><span>${avail} place(s)</span><span>${esc(x.recurrence||'Une fois')}</span></div></div>${action}</div>`});
 }
 async function book(id){const {data,error}=await sb.rpc('book_trip',{p_trip_id:id});if(error){toast(error.message);return}toast('Place réservée ✓');await refresh()}
 async function createTrip(){
@@ -168,25 +167,13 @@ async function createTrip(){
 }
 async function renderMy(){
   const el=$('myTrips');if(!el||!user)return;el.innerHTML='<div class="muted">Chargement…</div>';
-  const [{data:mine,error:me},{data:bs,error:be}]=await Promise.all([
+  const [{data:mine},{data:bs}]=await Promise.all([
     sb.from('trips').select('*').eq('driver_id',user.id).order('trip_date',{ascending:false}),
-    sb.from('bookings').select('id,trip_id,status,created_at,trips(*)').eq('passenger_id',user.id).eq('status','confirmed').order('created_at',{ascending:false})
+    sb.from('bookings').select('id,trip_id,status,trips(*)').eq('passenger_id',user.id).eq('status','confirmed').order('created_at',{ascending:false})
   ]);
-  if(me||be){el.innerHTML='<div class="card">Impossible de charger vos trajets. '+esc((me||be).message)+'</div>';return}
-  const own=(mine||[]).filter(x=>x.status==='active'), ownIds=own.map(x=>x.id);let byTrip={};
-  if(ownIds.length){
-    const {data:rows,error}=await sb.from('bookings').select('id,trip_id,passenger_id,created_at,profiles!bookings_passenger_id_fkey(full_name,email)').in('trip_id',ownIds).eq('status','confirmed').order('created_at',{ascending:true});
-    if(error){el.innerHTML='<div class="card">Impossible de charger les réservations : '+esc(error.message)+'</div>';return}
-    (rows||[]).forEach(b=>{(byTrip[b.trip_id] ||= []).push(b)});
-  }
   el.innerHTML='';
-  (mine||[]).forEach(x=>{
-    const reservations=byTrip[x.id]||[], remaining=Math.max(0,x.seats_total-reservations.length);
-    el.innerHTML+=`<div class="card"><div class="trip"><div><h3>${esc(fmtDate(x.trip_date))} · ${esc(String(x.trip_time).slice(0,5))}</h3><div>${esc(x.from_location)} → ${esc(x.to_location)}</div><div class="tags"><span>Conducteur</span><span>${remaining} place(s) restante(s) / ${x.seats_total}</span><span>${reservations.length} réservation(s)</span><span>${x.status==='active'?'Actif':x.status==='cancelled'?'Annulé':'Terminé'}</span></div></div>${x.status==='active'?`<button class="btn red" onclick="deleteTrip(${x.id})">Annuler</button>`:''}</div>
-      ${x.comment?`<div class="hint"><b>Votre commentaire :</b> ${esc(x.comment)}</div>`:''}
-      <div style="margin-top:12px"><b>Passagers réservés</b>${reservations.length?reservations.map(b=>`<div class="hint" style="padding:9px 0;border-top:1px solid var(--b)">👤 ${esc(b.profiles?.full_name||'Salarié')} ${b.profiles?.email?`· ${esc(b.profiles.email)}`:''}<br><span class="muted">Réservation le ${esc(new Date(b.created_at).toLocaleString('fr-FR'))}</span></div>`).join(''):'<div class="muted" style="margin-top:6px">Aucune réservation pour le moment.</div>'}</div></div>`;
-  });
-  (bs||[]).forEach(b=>{const x=b.trips;if(!x)return;el.innerHTML+=`<div class="card trip"><div><h3>${esc(fmtDate(x.trip_date))} · ${esc(String(x.trip_time).slice(0,5))}</h3><div>${esc(x.from_location)} → ${esc(x.to_location)}</div><div class="tags"><span>Passager</span></div>${x.comment?`<div class="hint"><b>Commentaire du conducteur :</b> ${esc(x.comment)}</div>`:''}</div><button class="btn red" onclick="cancelBook(${b.id})">Annuler</button></div>`});
+  (mine||[]).forEach(x=>{el.innerHTML+=`<div class="card trip"><div><h3>${esc(fmtDate(x.trip_date))} · ${esc(String(x.trip_time).slice(0,5))}</h3><div>${esc(x.from_location)} → ${esc(x.to_location)}</div><div class="tags"><span>Conducteur</span><span>${x.seats_total} place(s)</span></div></div><button class="btn red" onclick="deleteTrip(${x.id})">Annuler</button></div>`});
+  (bs||[]).forEach(b=>{const x=b.trips;if(!x)return;el.innerHTML+=`<div class="card trip"><div><h3>${esc(fmtDate(x.trip_date))} · ${esc(String(x.trip_time).slice(0,5))}</h3><div>${esc(x.from_location)} → ${esc(x.to_location)}</div><div class="tags"><span>Passager</span></div></div><button class="btn red" onclick="cancelBook(${b.id})">Annuler</button></div>`});
   if(!el.innerHTML)el.innerHTML='<div class="card muted">Aucun trajet pour le moment.</div>';
 }
 async function deleteTrip(id){if(!confirm('Annuler ce trajet ?'))return;const {error}=await sb.from('trips').update({status:'cancelled'}).eq('id',id).eq('driver_id',user.id);if(error)toast(error.message);else{toast('Trajet annulé');await refresh()}}
