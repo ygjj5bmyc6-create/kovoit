@@ -178,105 +178,95 @@ q=sb.from('trips').select('*,profiles!trips_driver_id_fkey(full_name)').eq('stat
   if(f)q=q.ilike('from_location','%'+f+'%');if(t)q=q.ilike('to_location','%'+t+'%');
   const {data,error}=await q.limit(50);if(error){r.innerHTML='<div class="card">Erreur de chargement.</div>';return}
   if(!data?.length){r.innerHTML='<div class="card muted">Aucun trajet trouvé.</div>';return}
-  const ids=data.map(x=>x.id);
-  // Les règles RLS peuvent masquer les réservations des autres salariés.
-  // Le RPC renvoie uniquement le nombre de 
-réservations confirmées par trajet.
-  const [{data:myBookings,error:myBookingsError},{data:bookingCounts,error:countsError}]=await Promise.all([
-    sb.from('bookings').select('trip_id').in('trip_id',ids).eq('passenger_id',user.id).eq('status','confirmed'),
-    sb.rpc('get_trip_booking_counts',{p_trip_ids:ids})
-  ]);
-  if(myBookingsError||countsError){
-    r.innerHTML='<div class="card">Impossible de vérifier les places restantes. 
-'+esc((myBookingsError||countsError).message)+'</div>';
-    return;
-  }
-  const countByTrip=new Map((bookingCounts||[]).map(b=>[String(b.trip_id),Number(b.confirmed_count)||0]));
-  r.innerHTML='';data.forEach(x=>{const count=countByTrip.get(String(x.id))||0;const avail=Math.max(0,x.seats_total-count);const mine=(myBookings||[]).some(b=>String(b.trip_id)===String(x.id));const owner=x.driver_id===user.id;let action=owner?'<span class="badge">Votre trajet</span>':mine?'<span class="badge">Réservé 
-✓</span>':avail>0?`<button class="btn" onclick="book(${x.id})">Réserver</button>`:'<span class="badge">Complet</span>';
-    r.innerHTML+=`<div class="card"><div class="trip"><div><h3>${esc(x.profiles?.full_name||'Salarié')}</h3><div class="muted">${esc(fmtDate(x.trip_date))} · ${esc(String(x.trip_time).slice(0,5))} · ${esc(x.from_location)} → ${esc(x.to_location)}</div><div class="tags"><span>${avail} place(s) restante(s) / ${x.seats_total}</span><span>${esc(x.recurrence||'Une fois')}</span></div></div>${action}</div>${x.comment?`<div class="hint" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--b)"><b>Commentaire du conducteur :</b> 
-${esc(x.comment)}</div>`:''}</div>`});
+  const ids=data.map(x=>x.id);const {data:bookings}=await sb.from('bookings').select('trip_id,passenger_id').in('trip_id',ids).eq('status','confirmed');
+  r.innerHTML='';data.forEach(x=>{const count=(bookings||[]).filter(b=>b.trip_id===x.id).length;const avail=Math.max(0,x.seats_total-count);const mine=(bookings||[]).some(b=>b.trip_id===x.id&&b.passenger_id===user.id);const owner=x.driver_id===user.id;let action=owner?'<span class="badge">Votre trajet</span>':mine?'<span class="badge">Réservé ✓</span>':avail>0?`<button class="btn" onclick="book(${x.id})">Réserver</button>`:'<span class="badge">Complet</span>';
+    r.innerHTML+=`<div class="card"><div 
+class="trip"><div><h3>${esc(x.profiles?.full_name||'Salarié')}</h3><div class="muted">${esc(fmtDate(x.trip_date))} · ${esc(String(x.trip_time).slice(0,5))} · ${esc(x.from_location)} → ${esc(x.to_location)}</div><div class="tags"><span>${avail} place(s) restante(s) / ${x.seats_total}</span><span>${esc(x.recurrence||'Une fois')}</span></div></div>${action}</div>${x.comment?`<div class="hint" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--b)"><b>Commentaire du conducteur :</b> ${esc(x.comment)}</div>`:''}</div>`});
 }
-async function book(id){const {data,error}=await sb.rpc('book_trip',{p_trip_id:id});if(error){toast(error.message);return}toast('Place réservée ✓');await refresh()}
+async function book(id){const {data,error}=await 
+sb.rpc('book_trip',{p_trip_id:id});if(error){toast(error.message);return}toast('Place réservée ✓');await refresh()}
 async function createTrip(){
   const from=$('cf').value.trim(),to=$('ct').value.trim(),date=$('cd').value,time=$('ch').value,places=Number($('cp').value);
   if(!from||!to||!date||!time){toast('Complétez les champs obligatoires.');return}
-  const {error}=await sb.from('trips').insert({driver_id:user.id,from_location:from,to_location:to,trip_date:date,trip_ti
-me:time,seats_total:places,recurrence:$('cr').value,comment:$('cc').value.trim()});
+  const {error}=await sb.from('trips').insert({driver_id:user.id,from_location:from,to_location:to,trip_date:date,trip_time:time,seats_total:places,recurrence:$('cr').value,comment:$('cc').value.trim()});
   if(error){toast(error.message);return}
-  toast('Trajet publié ✓');['cf','ct','cd','ch','cc'].forEach(id=>$(id).value='');await refresh();go('trips');
+  toast('Trajet publié 
+✓');['cf','ct','cd','ch','cc'].forEach(id=>$(id).value='');await refresh();go('trips');
 }
 async function renderMy(){
   const el=$('myTrips');if(!el||!user)return;el.innerHTML='<div class="muted">Chargement…</div>';
   const [{data:mine,error:me},{data:bs,error:be}]=await Promise.all([
     sb.from('trips').select('*').eq('driver_id',user.id).order('trip_date',{ascending:false}),
-    
-sb.from('bookings').select('id,trip_id,status,created_at,trips(*)').eq('passenger_id',user.id).eq('status','confirmed').order('created_at',{ascending:false})
+    sb.from('bookings').select('id,trip_id,status,created_at,trips(*)').eq('passenger_id',user.id).eq('status','confirmed').order('created_at',{ascending:fa
+lse})
   ]);
   if(me||be){el.innerHTML='<div class="card">Impossible de charger vos trajets. '+esc((me||be).message)+'</div>';return}
   const own=(mine||[]).filter(x=>x.status==='active'), ownIds=own.map(x=>x.id);let byTrip={};
   if(ownIds.length){
-    const {data:rows,error}=await sb.from('bookings').select('id,trip_id,passenger_id,created_at,profiles!bookings_passenger_id_fkey(full_name,email)').in('trip_id',ownIds).eq('status','confirmed').order('created_at',{ascending:t
-rue});
-    if(error){el.innerHTML='<div class="card">Impossible de charger les réservations : '+esc(error.message)+'</div>';return}
+    const {data:rows,error}=await sb.from('bookings').select('id,trip_id,passenger_id,created_at,profiles!bookings_passenger_id_fkey(full_name,email)').in('trip_id',ownIds).eq('status','confirmed').order('created_at',{ascending:true});
+    if(error){el.innerHTML='<div class="card">Impossible de charger les 
+réservations : '+esc(error.message)+'</div>';return}
     (rows||[]).forEach(b=>{(byTrip[b.trip_id] ||= []).push(b)});
   }
   el.innerHTML='';
   (mine||[]).forEach(x=>{
     const reservations=byTrip[x.id]||[], remaining=Math.max(0,x.seats_total-reservations.length);
-    el.innerHTML+=`<div class="card"><div class="trip"><div><h3>${esc(fmtDate(x.trip_date))} · 
-${esc(String(x.trip_time).slice(0,5))}</h3><div>${esc(x.from_location)} → ${esc(x.to_location)}</div><div class="tags"><span>Conducteur</span><span>${remaining} place(s) restante(s) / ${x.seats_total}</span><span>${reservations.length} réservation(s)</span><span>${x.status==='active'?'Actif':x.status==='cancelled'?'Annulé':'Terminé'}</span></div></div>${x.status==='active'?`<button class="btn red" onclick="deleteTrip(${x.id})">Annuler</button>`:''}</div>
+    el.innerHTML+=`<div class="card"><div class="trip"><div><h3>${esc(fmtDate(x.trip_date))} · ${esc(String(x.trip_time).slice(0,5))}</h3><div>${esc(x.from_location)} → ${esc(x.to_location)}</div><div 
+class="tags"><span>Conducteur</span><span>${remaining} place(s) restante(s) / ${x.seats_total}</span><span>${reservations.length} réservation(s)</span><span>${x.status==='active'?'Actif':x.status==='cancelled'?'Annulé':'Terminé'}</span></div></div>${x.status==='active'?`<button class="btn red" onclick="deleteTrip(${x.id})">Annuler</button>`:''}</div>
       ${x.comment?`<div class="hint"><b>Votre commentaire :</b> ${esc(x.comment)}</div>`:''}
-      <div style="margin-top:12px"><b>Passagers 
-réservés</b>${reservations.length?reservations.map(b=>`<div class="hint" style="padding:9px 0;border-top:1px solid var(--b)">👤 ${esc(b.profiles?.full_name||'Salarié')} ${b.profiles?.email?`· ${esc(b.profiles.email)}`:''}<br><span class="muted">Réservation le ${esc(new Date(b.created_at).toLocaleString('fr-FR'))}</span></div>`).join(''):'<div class="muted" style="margin-top:6px">Aucune réservation pour le moment.</div>'}</div></div>`;
+      <div style="margin-top:12px"><b>Passagers réservés</b>${reservations.length?reservations.map(b=>`<div class="hint" style="padding:9px 0;border-top:1px solid 
+var(--b)">👤 ${esc(b.profiles?.full_name||'Salarié')} ${b.profiles?.email?`· ${esc(b.profiles.email)}`:''}<br><span class="muted">Réservation le ${esc(new Date(b.created_at).toLocaleString('fr-FR'))}</span></div>`).join(''):'<div class="muted" style="margin-top:6px">Aucune réservation pour le moment.</div>'}</div></div>`;
   });
-  (bs||[]).forEach(b=>{const x=b.trips;if(!x)return;el.innerHTML+=`<div class="card trip"><div><h3>${esc(fmtDate(x.trip_date))} · 
-${esc(String(x.trip_time).slice(0,5))}</h3><div>${esc(x.from_location)} → ${esc(x.to_location)}</div><div class="tags"><span>Passager</span></div>${x.comment?`<div class="hint"><b>Commentaire du conducteur :</b> ${esc(x.comment)}</div>`:''}</div><button class="btn red" onclick="cancelBook(${b.id})">Annuler</button></div>`});
+  (bs||[]).forEach(b=>{const x=b.trips;if(!x)return;el.innerHTML+=`<div class="card trip"><div><h3>${esc(fmtDate(x.trip_date))} · ${esc(String(x.trip_time).slice(0,5))}</h3><div>${esc(x.from_location)} → ${esc(x.to_location)}</div><div 
+class="tags"><span>Passager</span></div>${x.comment?`<div class="hint"><b>Commentaire du conducteur :</b> ${esc(x.comment)}</div>`:''}</div><button class="btn red" onclick="cancelBook(${b.id})">Annuler</button></div>`});
   if(!el.innerHTML)el.innerHTML='<div class="card muted">Aucun trajet pour le moment.</div>';
 }
-async function deleteTrip(id){if(!confirm('Annuler ce trajet ?'))return;const {error}=await 
-sb.from('trips').update({status:'cancelled'}).eq('id',id).eq('driver_id',user.id);if(error)toast(error.message);else{toast('Trajet annulé');await refresh()}}
+async function deleteTrip(id){if(!confirm('Annuler ce trajet ?'))return;const {error}=await sb.from('trips').update({status:'cancelled'}).eq('id',id).eq('driver_id',user.id);if(error)toast(error.message);else{toast('Trajet annulé');await 
+refresh()}}
 async function cancelBook(id){if(!confirm('Annuler cette réservation ?'))return;const {error}=await sb.from('bookings').delete().eq('id',id).eq('passenger_id',user.id);if(error)toast(error.message);else{toast('Réservation annulée');await refresh()}}
 async function loadMessages(){
   const el=$('chat');if(!el||!user)return;el.innerHTML='<div class="muted">Chargement…</div>';
-  const {data,error}=await sb.from('messages').select('*,sender:profiles!messages_sender_id_fkey(full_name)').or(`sender_i
-d.eq.${user.id},receiver_id.eq.${user.id}`).order('created_at',{ascending:true}).limit(100);
-  if(error){el.innerHTML='<div class="muted">Impossible de charger les messages.</div>';return}
+  const {data,error}=await sb.from('messages').select('*,sender:profiles!messages_sender_id_fkey(full_name)').or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`).order('created_at',{ascending:true}).limit(100);
+  if(error){el.innerHTML='<div 
+class="muted">Impossible de charger les messages.</div>';return}
   el.innerHTML=data?.length?data.map(m=>`<div class="bubble ${m.sender_id===user.id?'me':''}">${esc(m.body)}<div class="muted" style="font-size:10px;margin-top:4px">${esc(m.sender?.full_name||'')}</div></div>`).join(''):'<div class="muted">Aucun message.</div>';
 }
-async function sendMsg(){const body=$('mi').value.trim(),to=$('messageTo').value.trim().toLowerCase();if(!body||!to){toast('Indi
-quez le destinataire et le message.');return}const {data:p,error:pe}=await sb.from('profiles').select('id').eq('email',to).eq('active',true).single();if(pe||!p){toast('Destinataire introuvable.');return}const {error}=await sb.from('messages').insert({sender_id:user.id,receiver_id:p.id,body});if(error)toast(error.message);else{$('mi').value='';toast('Message envoyé ✓');await loadMessages();await loadHome()}}
+async function sendMsg(){const body=$('mi').value.trim(),to=$('messageTo').value.trim().toLowerCase();if(!body||!to){toast('Indiquez le destinataire et le message.');return}const {data:p,error:pe}=await 
+sb.from('profiles').select('id').eq('email',to).eq('active',true).single();if(pe||!p){toast('Destinataire introuvable.');return}const {error}=await sb.from('messages').insert({sender_id:user.id,receiver_id:p.id,body});if(error)toast(error.message);else{$('mi').value='';toast('Message envoyé ✓');await loadMessages();await loadHome()}}
 function loadProfile(){$('pn').value=profile.full_name||'';$('pe').value=profile.email||user.email;$('pd').value=profile.department||''}
-async function saveProfile(){const full_name=$('pn').value.trim(),department=$('pd').value.trim();const {data,error}=await sb.from('profiles').update({full_name,department,updated_at:new Date().toISOString()}).eq('id'
-,user.id).select().single();if(error)toast(error.message);else{profile=data;$('hello').textContent=full_name||user.email.split('@')[0];toast('Profil enregistré ✓')}}
+async function saveProfile(){const full_name=$('pn').value.trim(),department=$('pd').value.trim();const {data,error}=await sb.from('profiles').update({full_name,department,updated_at:new 
+Date().toISOString()}).eq('id',user.id).select().single();if(error)toast(error.message);else{profile=data;$('hello').textContent=full_name||user.email.split('@')[0];toast('Profil enregistré ✓')}}
 async function loadAdmin(){
   if(profile?.role!=='admin')return;
   const [{count:mc,error:me},{count:tc,error:te},{count:bc,error:be},{data:users,error:ue},{data:trips,error:tre}]=await Promise.all([
     sb.from('profiles').select('id',{count:'exact',head:true}).eq('active',true),
     sb.from('trips').select('id',{count:'exact',head:true}),
     sb.from('bookings').select('id',{count:'exact',head:true}).eq('status','confirmed'),
-    sb.from('profiles').select('id,full_name,email,a
-ctive,role').order('full_name').limit(200),
+    
+sb.from('profiles').select('id,full_name,email,active,role').order('full_name').limit(200),
     sb.from('trips').select('id,driver_id,from_location,to_location,trip_date,trip_time,status,profiles!trips_driver_id_fkey(full_name)').order('trip_date',{ascending:false}).limit(200)
   ]);
   $('am').textContent=mc??'—';$('at').textContent=tc??'—';$('ab').textContent=bc??'—';
   const tbody=$('adminUsers');
   if(ue){tbody.innerHTML='<tr><td colspan="5">Impossible de charger les utilisateurs : '+esc(ue.message)+'</td></tr>';}else{
-    tbody.innerHTML=(users||[]).map(u=>`<tr><td>${esc(u.full_name||'—')}</td><td>${esc(u.email||'')}</td><td>${u.role==='admin'?'Administrateur':'Salarié'}</td><td>${u.active?'Actif':'Désactivé'}</td><td>${u.id===user.id?'<span class="muted">Vous</span>':`<button class="btn ${u.active?'red':'alt'}" onclick="toggleUser('${u.id}',${!u.active})">${u.active?'Désactiver':'Réactiver'}</button>`}</td></tr>`).join('')||'<tr><td colspan="5">Aucun utilisateur.</td></tr>';
+    
+tbody.innerHTML=(users||[]).map(u=>`<tr><td>${esc(u.full_name||'—')}</td><td>${esc(u.email||'')}</td><td>${u.role==='admin'?'Administrateur':'Salarié'}</td><td>${u.active?'Actif':'Désactivé'}</td><td>${u.id===user.id?'<span class="muted">Vous</span>':`<button class="btn ${u.active?'red':'alt'}" onclick="toggleUser('${u.id}',${!u.active})">${u.active?'Désactiver':'Réactiver'}</button>`}</td></tr>`).join('')||'<tr><td colspan="5">Aucun utilisateur.</td></tr>';
   }
   const tt=$('adminTrips');
   if(tre){tt.innerHTML='<tr><td colspan="5">Impossible de charger les trajets : 
 '+esc(tre.message)+'</td></tr>';}else{
     tt.innerHTML=(trips||[]).map(t=>`<tr><td>${esc(fmtDate(t.trip_date))} · ${esc(String(t.trip_time).slice(0,5))}</td><td>${esc(t.from_location)} → ${esc(t.to_location)}</td><td>${esc(t.profiles?.full_name||'Salarié')}</td><td>${t.status==='active'?'Actif':t.status==='cancelled'?'Annulé':'Terminé'}</td><td>${t.status==='active'?`<button class="btn red" onclick="adminCancelTrip(${t.id})">Annuler</button>`:'—'}</td></tr>`).join('')||'<tr><td colspan="5">Aucun trajet.</td></tr>';
   }
-  if(me||te||be)toast('Certaines statistiques n’ont pas pu être chargées. Vérifiez les autorisations Supabase.');
+  if(me||te||be)toast('Certaines statistiques n’ont pas pu être chargées. Vérifiez les 
+autorisations Supabase.');
 }
 async function toggleUser(id,active){
   if(profile?.role!=='admin'){toast('Accès réservé à l’administrateur.');return;}
   if(id===user.id){toast('Vous ne pouvez pas désactiver votre propre compte.');return;}
   const action=active?'réactiver':'désactiver';if(!confirm('Voulez-vous vraiment '+action+' ce compte ?'))return;
   const {error}=await sb.from('profiles').update({active,updated_at:new Date().toISOString()}).eq('id',id);
-  if(error){toast('Modification impossible : '+error.message);return;}toast('Compte mis à jour ✓');await loadAdmin();
+  if(error){toast('Modification impossible : '+error.message);return;}toast('Compte mis à jour ✓');await 
+loadAdmin();
 }
 async function adminCancelTrip(id){
   if(profile?.role!=='admin')return;
@@ -285,13 +275,12 @@ async function adminCancelTrip(id){
   if(error){toast('Annulation impossible : '+error.message);return;}toast('Trajet annulé ✓');await loadAdmin();await refresh();
 }
 $('pass').addEventListener('keydown',e=>{if(e.key==='Enter')login()});$('email').addEventListener('keydown',e=>{if(e.key==='Enter')login()});
-if(!configured){$('email').value='';$('pass').value='';$
-('login').insertAdjacentHTML('beforeend','<div class="hint" style="color:#b34a45">Configuration Supabase manquante : renseignez <b>supabase-config.js</b> avant de vous connecter.</div>')}
+if(!configured){$('email').value='';$('pass').value='';$('login').insertAdjacentHTML('beforeend','<div class="hint" style="color:#b34a45">Configuration Supabase manquante : renseignez <b>supabase-config.js</b> avant de vous connecter.</div>')}
 else{
  const isRecovery=new URLSearchParams(window.location.hash.replace(/^#/,'' )).get('type')==='recovery';
  if(isRecovery){$('login').style.display='none';$('recovery').style.display='grid'}
  sb.auth.getSession().then(({data})=>{if(data.session&&!isRecovery)start(data.session.user)});
- sb.auth.onAuthStateChange((event,sessio
-n)=>{if(event==='PASSWORD_RECOVERY'){$('login').style.display='none';$('app').style.display='none';$('recovery').style.display='grid'} if(event==='SIGNED_OUT')location.reload()})
+ 
+sb.auth.onAuthStateChange((event,session)=>{if(event==='PASSWORD_RECOVERY'){$('login').style.display='none';$('app').style.display='none';$('recovery').style.display='grid'} if(event==='SIGNED_OUT')location.reload()})
 }
 </script></body></html>
